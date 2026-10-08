@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contact Book</title>
+<style>
+  :root {
+    --bg: #e9eff2; --card: #fff; --ink: #14232b; --muted: #5c6f78;
+    --accent: #0f6b73; --accent-ink: #fff; --danger: #b3372f; --line: #cfdbe0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0e1a20; --card: #16262e; --ink: #e6eef1; --muted: #8fa5ae;
+            --accent: #3fb3bd; --accent-ink: #06222a; --danger: #ef7d74; --line: #284049; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 1.6rem; margin: 0 0 16px; }
+  h2 { font-size: 1rem; margin: 0 0 8px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+            padding: 16px; margin-bottom: 16px; }
+  input { width: 100%; padding: 10px 12px; font: inherit; color: var(--ink);
+          background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+  input:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button { font: inherit; cursor: pointer; padding: 10px 14px; border-radius: 6px;
+           border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink); }
+  button.ghost { background: transparent; color: var(--accent); }
+  button.danger { background: transparent; color: var(--danger); border-color: var(--danger); }
+  .row { display: flex; gap: 8px; }
+  .row > input { flex: 1; min-width: 0; }
+  .hint { color: var(--muted); font-size: .875rem; margin: 8px 0 0; }
+  #msg { min-height: 1.4em; margin: 8px 0 0; font-size: .9rem; }
+  #msg.err { color: var(--danger); }
+  ul { list-style: none; margin: 12px 0 0; padding: 0; }
+  li { display: flex; align-items: center; gap: 8px; padding: 10px 0; border-top: 1px solid var(--line); }
+  li .info { flex: 1; min-width: 0; }
+  li .name { font-weight: 600; overflow-wrap: anywhere; }
+  li .num { color: var(--muted); }
+  li button { padding: 6px 10px; font-size: .875rem; }
+  .empty { color: var(--muted); padding: 12px 0 0; }
+  @media (max-width: 480px) { .row { flex-wrap: wrap; } .row button { flex: 1; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Contact Book</h1>
+
+  <section>
+    <h2>Quick command</h2>
+    <form id="cmdForm" class="row">
+      <input id="cmd" placeholder="add ali 123466567" autocomplete="off" aria-label="Quick command">
+      <button type="submit">Run</button>
+    </form>
+    <p class="hint">Try: <b>add ali 123466567</b> &middot; <b>update ali 999</b> &middot; <b>delete ali</b> &middot; <b>find ali</b></p>
+    <p id="msg" role="status"></p>
+  </section>
+
+  <section>
+    <h2 id="formTitle">Add contact</h2>
+    <form id="form">
+      <div class="row">
+        <input id="name" placeholder="Name" required aria-label="Name">
+        <input id="number" placeholder="Phone number" inputmode="tel" required aria-label="Phone number">
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button type="submit" id="saveBtn">Add contact</button>
+        <button type="button" class="ghost" id="cancelBtn" hidden>Cancel</button>
+      </div>
+    </form>
+  </section>
+
+  <section>
+    <h2>Contacts (<span id="count">0</span>)</h2>
+    <input id="search" placeholder="Search by name or number" aria-label="Search contacts">
+    <ul id="list"></ul>
+  </section>
+</main>
+
+<script>
+const KEY = "contacts-v1";
+let contacts = load();
+let editingId = null;
+
+const $ = id => document.getElementById(id);
+
+function load() {
+  try { return JSON.parse(localStorage.getItem(KEY)) || []; }
+  catch (e) { return []; }
+}
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(contacts)); }
+  catch (e) { say("Could not save to this browser's storage.", true); }
+}
+function say(text, isErr) {
+  const m = $("msg");
+  m.textContent = text;
+  m.className = isErr ? "err" : "";
+}
+function findByName(name) {
+  const n = name.trim().toLowerCase();
+  return contacts.find(c => c.name.toLowerCase() === n);
+}
+
+/* CREATE */
+function addContact(name, number) {
+  name = name.trim(); number = number.trim();
+  if (!name || !number) return say("Enter both a name and a number.", true), false;
+  if (findByName(name)) return say(name + " already exists. Use update or edit.", true), false;
+  contacts.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name, number });
+  save(); render(); say("Added " + name + ".");
+  return true;
+}
+/* UPDATE */
+function updateContact(id, name, number) {
+  const c = contacts.find(x => x.id === id);
+  if (!c) return false;
+  name = name.trim(); number = number.trim();
+  const clash = findByName(name);
+  if (clash && clash.id !== id) return say(name + " already exists.", true), false;
+  c.name = name; c.number = number;
+  save(); render(); say("Updated " + name + ".");
+  return true;
+}
+/* DELETE */
+function deleteContact(id) {
+  const c = contacts.find(x => x.id === id);
+  if (!c) return;
+  contacts = contacts.filter(x => x.id !== id);
+  if (editingId === id) stopEditing();
+  save(); render(); say("Deleted " + c.name + ".");
+}
+
+/* READ / render */
+function render() {
+  const q = $("search").value.trim().toLowerCase();
+  const shown = contacts
+    .filter(c => !q || c.name.toLowerCase().includes(q) || c.number.includes(q))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  $("count").textContent = contacts.length;
+  const ul = $("list");
+  ul.textContent = "";
+  if (!shown.length) {
+    const p = document.createElement("li");
+    p.className = "empty";
+    p.textContent = contacts.length ? "No contacts match your search." : "No contacts yet. Add one above.";
+    ul.appendChild(p);
+    return;
+  }
+  shown.forEach(c => {
+    const li = document.createElement("li");
+    const info = document.createElement("div"); info.className = "info";
+    const n = document.createElement("div"); n.className = "name"; n.textContent = c.name;
+    const p = document.createElement("div"); p.className = "num"; p.textContent = c.number;
+    info.append(n, p);
+    const edit = document.createElement("button"); edit.className = "ghost"; edit.textContent = "Edit";
+    edit.onclick = () => startEditing(c.id);
+    const del = document.createElement("button"); del.className = "danger"; del.textContent = "Delete";
+    del.onclick = () => { if (confirm("Delete " + c.name + "?")) deleteContact(c.id); };
+    li.append(info, edit, del);
+    ul.appendChild(li);
+  });
+}
+
+/* Manual form */
+function startEditing(id) {
+  const c = contacts.find(x => x.id === id);
+  if (!c) return;
+  editingId = id;
+  $("name").value = c.name; $("number").value = c.number;
+  $("formTitle").textContent = "Edit contact";
+  $("saveBtn").textContent = "Save changes";
+  $("cancelBtn").hidden = false;
+  $("name").focus();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+function stopEditing() {
+  editingId = null;
+  $("form").reset();
+  $("formTitle").textContent = "Add contact";
+  $("saveBtn").textContent = "Add contact";
+  $("cancelBtn").hidden = true;
+}
+$("form").addEventListener("submit", e => {
+  e.preventDefault();
+  const ok = editingId
+    ? updateContact(editingId, $("name").value, $("number").value)
+    : addContact($("name").value, $("number").value);
+  if (ok) stopEditing();
+});
+$("cancelBtn").onclick = stopEditing;
+$("search").addEventListener("input", render);
+
+/* Quick command box */
+function splitNameNumber(rest) {
+  const parts = rest.trim().split(/\s+/);
+  const last = parts[parts.length - 1] || "";
+  if (parts.length < 2 || !/^\+?[\d-]{3,}$/.test(last)) return null;
+  return { name: parts.slice(0, -1).join(" "), number: last };
+}
+$("cmdForm").addEventListener("submit", e => {
+  e.preventDefault();
+  const text = $("cmd").value.trim();
+  if (!text) return;
+  const m = text.match(/^(add|update|edit|delete|remove|find|search)\s+(.+)$/i);
+  if (!m) return say('Start with add, update, delete or find. Example: add ali 123466567', true);
+  const action = m[1].toLowerCase(), rest = m[2];
+  let ok = true;
+
+  if (action === "add") {
+    const p = splitNameNumber(rest);
+    if (!p) return say("Use: add <name> <number>", true);
+    ok = addContact(p.name, p.number);
+  } else if (action === "update" || action === "edit") {
+    const p = splitNameNumber(rest);
+    if (!p) return say("Use: update <name> <new number>", true);
+    const c = findByName(p.name);
+    if (!c) return say("No contact named " + p.name + ".", true);
+    ok = updateContact(c.id, c.name, p.number);
+  } else if (action === "delete" || action === "remove") {
+    const c = findByName(rest);
+    if (!c) return say("No contact named " + rest + ".", true);
+    deleteContact(c.id);
+  } else {
+    $("search").value = rest;
+    render();
+    say("Showing results for " + rest + ".");
+  }
+  if (ok) $("cmd").value = "";
+});
+
+render();
+</script>
+</body>
+</html>
